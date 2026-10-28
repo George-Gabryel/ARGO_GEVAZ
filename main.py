@@ -17,7 +17,6 @@ CAMINHO_DB_EDL = Path("saida/edl_por_ds.db")
 CAMINHO_XLSX_GEO = "dados/Georreferenciamento OVT 2026 ATUALIZAÇÃO.xlsx"
 LINHA_CABECALHO_GEO = 2  # as duas primeiras linhas são título
 CAMINHO_DB_GEO = Path("saida/georreferenciamento_ovt.db")
-TABELA_GEO = "georef_ovt"
 
 
 def ovitrampas() -> None:
@@ -32,30 +31,41 @@ def ovitrampas() -> None:
 
 
 def edl_por_ds() -> None:
+    """Cada aba vira uma tabela: 'DS 1 - TOTAL' -> edl_ds_i ... 'DS 8 - TOTAL' -> edl_ds_viii.
+    A aba de resumo tem dois quadros, então vira duas tabelas."""
     abas = ex.extrair(CAMINHO_XLSX_EDL, None, header=None)
     print(f"Lidas {len(abas)} abas de {CAMINHO_XLSX_EDL}")
 
-    tabelas = {
-        "edl": (load.transformar_edl(abas), SCHEMA.criar_tabela_edl()),
-    }
-    resumo_ds, resumo_bairro = load.transformar_resumo_edl(abas[ABA_RESUMO_EDL])
-    tabelas["resumo_ds"] = (resumo_ds, SCHEMA.criar_tabela_resumo_ds())
-    tabelas["resumo_bairro"] = (resumo_bairro, SCHEMA.criar_tabela_resumo_bairro())
-
-    for tabela, (tratado, schema) in tabelas.items():
-        total = load.carregar(tratado, CAMINHO_DB_EDL, tabela, schema)
-        print(f"Tabela '{tabela}' agora tem {total} registros em {CAMINHO_DB_EDL}")
+    for nome_aba, bruto in abas.items():
+        ds = load.ds_romano(nome_aba)
+        if nome_aba == ABA_RESUMO_EDL:
+            total_ds, total_bairro = load.transformar_resumo_edl(bruto)
+            salvar(total_ds, CAMINHO_DB_EDL, "edl_total_por_ds", SCHEMA.criar_tabela_resumo_ds, nome_aba)
+            salvar(total_bairro, CAMINHO_DB_EDL, "edl_total_por_bairro", SCHEMA.criar_tabela_resumo_bairro, nome_aba)
+        elif ds:
+            salvar(load.transformar_edl(bruto, ds), CAMINHO_DB_EDL, f"edl_ds_{ds.lower()}",
+                   SCHEMA.criar_tabela_edl, nome_aba)
+        else:
+            print(f"Aba '{nome_aba}' ignorada: formato desconhecido")
 
 
 def georreferenciamento() -> None:
+    """Cada aba vira uma tabela: 'DS I - ID OVT' -> georef_ovt_ds_i ..."""
     abas = ex.extrair(CAMINHO_XLSX_GEO, None, header=LINHA_CABECALHO_GEO)
-    print(f"Lidas {sum(len(df) for df in abas.values())} linhas de {len(abas)} abas de {CAMINHO_XLSX_GEO}")
+    print(f"Lidas {len(abas)} abas de {CAMINHO_XLSX_GEO}")
 
-    tratado = load.transformar_georef(abas)
-    print(f"Restaram {len(tratado)} linhas após a limpeza")
+    for nome_aba, bruto in abas.items():
+        ds = load.ds_romano(nome_aba)
+        if ds:
+            salvar(load.transformar_georef(bruto, ds), CAMINHO_DB_GEO, f"georef_ovt_ds_{ds.lower()}",
+                   SCHEMA.criar_tabela_georef, nome_aba)
+        else:
+            print(f"Aba '{nome_aba}' ignorada: formato desconhecido")
 
-    total = load.carregar(tratado, CAMINHO_DB_GEO, TABELA_GEO, SCHEMA.criar_tabela_georef())
-    print(f"Tabela '{TABELA_GEO}' agora tem {total} registros em {CAMINHO_DB_GEO}")
+
+def salvar(tratado, caminho_db: Path, tabela: str, criar_schema, nome_aba: str) -> None:
+    total = load.carregar(tratado, caminho_db, tabela, criar_schema(tabela))
+    print(f"Aba '{nome_aba.strip()}' -> tabela '{tabela}' com {total} registros em {caminho_db}")
 
 
 def main() -> None:

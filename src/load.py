@@ -238,48 +238,47 @@ def _colunas_edl(cabecalho: list) -> tuple[dict, list, list]:
     return campos, coord, obs
 
 
-def transformar_edl(abas: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """Cada aba 'DS n - TOTAL' tem blocos ('EDL - PONTO ESTRATÉGICO GEVACZ',
-    'EDL - OUTROS EQUIPAMENTOS'...), uma linha TOTAL e, às vezes, um bloco
-    RETIRADO no fim. Vira uma tabela só, com ds, categoria e situacao."""
+def transformar_edl(bruto: pd.DataFrame, ds: str) -> pd.DataFrame:
+    """Uma aba 'DS n - TOTAL' (lida com header=None). Ela tem blocos
+    ('EDL - PONTO ESTRATÉGICO GEVACZ', 'EDL - OUTROS EQUIPAMENTOS'...), uma
+    linha TOTAL e, às vezes, um bloco RETIRADO no fim. Vira uma tabela com
+    categoria e situacao em colunas."""
+    linhas = bruto.values.tolist()
+    topo = next(i for i, linha in enumerate(linhas) if normalizar_nome(linha[0]) == "no")
+    campos, coord, obs = _colunas_edl(linhas[topo])
+
     registros = []
-    for nome_aba, bruto in abas.items():
-        ds = ds_romano(nome_aba)
-        if ds is None:  # aba de resumo
+    categoria, situacao = None, "ATIVA"
+    for linha in linhas[topo - 1::-1]:  # o 1º bloco fica acima do cabeçalho
+        if (texto_limpo(linha[0]) or "").upper().startswith("EDL -"):
+            categoria = texto_limpo(linha[0])[5:].strip().upper()
+            break
+    for linha in linhas[topo + 1:]:
+        celulas = [texto_limpo(v) for v in linha]
+        marcadores = {sem_acento(c).upper() for c in celulas if c}
+        if (celulas[0] or "").upper().startswith("EDL -"):
+            categoria = celulas[0][5:].strip().upper()
             continue
-        linhas = bruto.values.tolist()
-        topo = next(i for i, linha in enumerate(linhas) if normalizar_nome(linha[0]) == "no")
-        campos, coord, obs = _colunas_edl(linhas[topo])
+        if marcadores & {"RETIRADO", "RETIRADOS"}:
+            categoria, situacao = None, "RETIRADA"
+            continue
+        if "TOTAL" in marcadores:
+            continue
 
-        categoria, situacao = None, "ATIVA"
-        for linha in linhas[topo - 1::-1]:  # o 1º bloco fica acima do cabeçalho
-            if (texto_limpo(linha[0]) or "").upper().startswith("EDL -"):
-                categoria = texto_limpo(linha[0])[5:].strip().upper()
-                break
-        for linha in linhas[topo + 1:]:
-            celulas = [texto_limpo(v) for v in linha]
-            marcadores = {sem_acento(c).upper() for c in celulas if c}
-            if (celulas[0] or "").upper().startswith("EDL -"):
-                categoria = celulas[0][5:].strip().upper()
-                continue
-            if marcadores & {"RETIRADO", "RETIRADOS"}:
-                categoria, situacao = None, "RETIRADA"
-                continue
-            if "TOTAL" in marcadores:
-                continue
-
-            registro = {campo: celulas[i] for campo, i in campos.items()}
-            if not (registro["nome"] or registro["logradouro"] or registro["qt_edl_real"]):
-                continue
-            registro["latitude"], registro["longitude"] = coordenadas(*(celulas[i] for i in coord))
-            registro.update(
-                ds=ds,
-                categoria=categoria,
-                situacao=situacao,
-                coordenadas_original=juntar(*(celulas[i] for i in coord)),
-                obs=juntar(*(celulas[i] for i in obs)),
-            )
-            registros.append(registro)
+        # campo que a aba não tem (ex.: 'EDL IDEAL' só existe em algumas) fica vazio
+        registro = {campo: celulas[campos[campo]] if campo in campos else None
+                    for campo in CABECALHO_EDL.values() if campo != "coordenadas"}
+        if not (registro["nome"] or registro["logradouro"] or registro["qt_edl_real"]):
+            continue
+        registro["latitude"], registro["longitude"] = coordenadas(*(celulas[i] for i in coord))
+        registro.update(
+            ds=ds,
+            categoria=categoria,
+            situacao=situacao,
+            coordenadas_original=juntar(*(celulas[i] for i in coord)),
+            obs=juntar(*(celulas[i] for i in obs)),
+        )
+        registros.append(registro)
 
     df = pd.DataFrame(registros)
     for coluna in ["numero", "qt", "qt_edl_ideal", "qt_edl_real"]:
@@ -334,15 +333,11 @@ def transformar_resumo_edl(bruto: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFr
 
 # ------------------------------------------------ Georreferenciamento das OVT
 
-def transformar_georef(abas: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """Uma aba por DS ('DS I - ID OVT'...), todas com o mesmo cabeçalho."""
-    partes = []
-    for nome_aba, df in abas.items():
-        df = df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed")].copy()
-        df.columns = [normalizar_nome(c) for c in df.columns]
-        df["ds"] = ds_romano(nome_aba)
-        partes.append(df)
-    df = pd.concat(partes, ignore_index=True)
+def transformar_georef(df: pd.DataFrame, ds: str) -> pd.DataFrame:
+    """Uma aba 'DS n - ID OVT'; todas têm o mesmo cabeçalho."""
+    df = df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed")].copy()
+    df.columns = [normalizar_nome(c) for c in df.columns]
+    df["ds"] = ds
 
     for coluna in df.columns:
         df[coluna] = df[coluna].map(texto_limpo)
@@ -351,7 +346,8 @@ def transformar_georef(abas: dict[str, pd.DataFrame]) -> pd.DataFrame:
     # 'SAM 1001' -> 'SAM1001', mesmo formato do id_ovt em total_ovt.db
     df["id_ovt"] = df["id_ovt"].str.replace(r"\s", "", regex=True).str.upper()
     df["bairro"] = df["bairro"].str.upper()
-    agen_matri = df["agente_matricula"].str.split("/", n=1, expand=True).reindex(columns=[0, 1])
+    # extract em vez de split: numa aba sem nenhuma '/matrícula' a 2ª parte ainda existe
+    agen_matri = df["agente_matricula"].str.extract(r"^([^/]*)(?:/(.*))?$")
     df["agente"] = agen_matri[0].str.strip()
     df["matricula"] = agen_matri[1].str.strip()
     df["coordenadas_original"] = [juntar(la, lo) for la, lo in zip(df["latitude"], df["longitude"])]

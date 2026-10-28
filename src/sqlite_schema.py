@@ -30,9 +30,9 @@ def criar_tabela():
     return SCHEMA
 
 
-def criar_tabela_edl():
-    SCHEMA = """
-    CREATE TABLE IF NOT EXISTS edl (
+def criar_tabela_edl(tabela):
+    SCHEMA = f"""
+    CREATE TABLE IF NOT EXISTS {tabela} (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
     ds                    TEXT NOT NULL,
     categoria             TEXT,
@@ -54,17 +54,16 @@ def criar_tabela_edl():
     dt_instalacao         TEXT,
     obs                   TEXT
     );
-    CREATE INDEX IF NOT EXISTS idx_edl_ds ON edl (ds);
-    CREATE INDEX IF NOT EXISTS idx_edl_categoria ON edl (categoria);
-    CREATE INDEX IF NOT EXISTS idx_edl_bairro ON edl (bairro);
+    CREATE INDEX IF NOT EXISTS idx_{tabela}_categoria ON {tabela} (categoria);
+    CREATE INDEX IF NOT EXISTS idx_{tabela}_bairro ON {tabela} (bairro);
     """
 
     return SCHEMA
 
 
-def criar_tabela_resumo_ds():
-    SCHEMA = """
-    CREATE TABLE IF NOT EXISTS resumo_ds (
+def criar_tabela_resumo_ds(tabela):
+    SCHEMA = f"""
+    CREATE TABLE IF NOT EXISTS {tabela} (
     ds                    TEXT PRIMARY KEY,
     pe_com_edl            INTEGER,
     edl_em_pe             INTEGER,
@@ -81,9 +80,9 @@ def criar_tabela_resumo_ds():
     return SCHEMA
 
 
-def criar_tabela_resumo_bairro():
-    SCHEMA = """
-    CREATE TABLE IF NOT EXISTS resumo_bairro (
+def criar_tabela_resumo_bairro(tabela):
+    SCHEMA = f"""
+    CREATE TABLE IF NOT EXISTS {tabela} (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     ds                  TEXT NOT NULL,
     bairro              TEXT NOT NULL,
@@ -96,9 +95,9 @@ def criar_tabela_resumo_bairro():
     return SCHEMA
 
 
-def criar_tabela_georef():
-    SCHEMA = """
-    CREATE TABLE IF NOT EXISTS georef_ovt (
+def criar_tabela_georef(tabela):
+    SCHEMA = f"""
+    CREATE TABLE IF NOT EXISTS {tabela} (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
     ds                    TEXT NOT NULL,
     bairro                TEXT NOT NULL,
@@ -112,8 +111,7 @@ def criar_tabela_georef():
     matricula             TEXT,
     data                  TEXT
     );
-    CREATE INDEX IF NOT EXISTS idx_georef_ds ON georef_ovt (ds);
-    CREATE INDEX IF NOT EXISTS idx_georef_bairro ON georef_ovt (bairro);
+    CREATE INDEX IF NOT EXISTS idx_{tabela}_bairro ON {tabela} (bairro);
     """
 
     return SCHEMA
