@@ -1,7 +1,8 @@
 from pathlib import Path
 import src.extract as ex
-import src.load as load
+import src.transform as transform
 import src.sqlite_schema as SCHEMA
+import src.load as carregar
 
 
 CAMINHO_XLSX = "dados/Total Ovtrampas.xlsx"
@@ -23,11 +24,12 @@ def ovitrampas() -> None:
     dado_bruto = ex.extrair(CAMINHO_XLSX, ABA)
     print(f"Lidas {len(dado_bruto)} linhas da aba '{ABA}' de {CAMINHO_XLSX}")
 
-    tratado = load.transformar(dado_bruto)
+    tratado = transform.transformar(dado_bruto)
     print(f"Restaram {len(tratado)} linhas após a limpeza")
 
-    total = load.carregar(tratado, CAMINHO_DB, TABELA, criar_tabela)
+    total = carregar.carregar(tratado, CAMINHO_DB, TABELA, criar_tabela)
     print(f"Tabela '{TABELA}' agora tem {total} registros em {CAMINHO_DB}")
+
 
 
 def edl_por_ds() -> None:
@@ -37,16 +39,18 @@ def edl_por_ds() -> None:
     print(f"Lidas {len(abas)} abas de {CAMINHO_XLSX_EDL}")
 
     for nome_aba, bruto in abas.items():
-        ds = load.ds_romano(nome_aba)
+        ds = transform.ds_romano(nome_aba)
         if nome_aba == ABA_RESUMO_EDL:
-            total_ds, total_bairro = load.transformar_resumo_edl(bruto)
+            total_ds, total_bairro = transform.transformar_resumo_edl(bruto)
             salvar(total_ds, CAMINHO_DB_EDL, "edl_total_por_ds", SCHEMA.criar_tabela_resumo_ds, nome_aba)
             salvar(total_bairro, CAMINHO_DB_EDL, "edl_total_por_bairro", SCHEMA.criar_tabela_resumo_bairro, nome_aba)
         elif ds:
-            salvar(load.transformar_edl(bruto, ds), CAMINHO_DB_EDL, f"edl_ds_{ds.lower()}",
+            salvar(transform.transformar_edl(bruto, ds), CAMINHO_DB_EDL, f"edl_ds_{ds.lower()}",
                    SCHEMA.criar_tabela_edl, nome_aba)
         else:
             print(f"Aba '{nome_aba}' ignorada: formato desconhecido")
+
+   
 
 
 def georreferenciamento() -> None:
@@ -55,16 +59,16 @@ def georreferenciamento() -> None:
     print(f"Lidas {len(abas)} abas de {CAMINHO_XLSX_GEO}")
 
     for nome_aba, bruto in abas.items():
-        ds = load.ds_romano(nome_aba)
+        ds = transform.ds_romano(nome_aba)
         if ds:
-            salvar(load.transformar_georef(bruto, ds), CAMINHO_DB_GEO, f"georef_ovt_ds_{ds.lower()}",
+            salvar(transform.transformar_georef(bruto, ds), CAMINHO_DB_GEO, f"georef_ovt_ds_{ds.lower()}",
                    SCHEMA.criar_tabela_georef, nome_aba)
         else:
             print(f"Aba '{nome_aba}' ignorada: formato desconhecido")
 
 
 def salvar(tratado, caminho_db: Path, tabela: str, criar_schema, nome_aba: str) -> None:
-    total = load.carregar(tratado, caminho_db, tabela, criar_schema(tabela))
+    total = transform.carregar(tratado, caminho_db, tabela, criar_schema(tabela))
     print(f"Aba '{nome_aba.strip()}' -> tabela '{tabela}' com {total} registros em {caminho_db}")
 
 
